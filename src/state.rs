@@ -59,4 +59,46 @@ impl AppState {
             None
         }
     }
+
+    // get users in a room
+    pub async fn get_room_users(&self, room_name: &str) -> Vec<User> {
+        let rooms = self.rooms.read().await;
+        rooms.get(room_name).cloned().unwrap_or_default()
+    }
+
+    // get user by socket id
+    pub async fn get_user_by_socket_id(&self, socket_id: &str) -> Option<User> {
+        let socket_user = self.socket_users.read().await;
+        socket_user.get(socket_id).cloned()
+    }
+
+    // add message to room
+    pub async fn add_message(&self, message: ChatMessage) {
+        let mut messages = self.messages.write().await;
+        messages
+            .entry(message.room.clone())
+            .or_insert_with(Vec::new)
+            .push(message);
+    }
+
+    // get message from a room
+    pub async fn get_room_messages(&self, room_name: &str) -> Vec<ChatMessage> {
+        let messages = self.messages.read().await;
+        messages.get(room_name).cloned().unwrap_or_default()
+    }
+
+    // get all rooms with user counts
+    pub async fn get_rooms_info(&self) -> HashMap<String, usize> {
+        let rooms = self.rooms.read().await;
+        rooms
+            .iter()
+            .map(|(name, users)| (name.clone(), users.len()))
+            .collect()
+    }
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
