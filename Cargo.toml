@@ -1,0 +1,30 @@
+
+
+[package]
+name = "rust-socket-chat"
+version = "0.1.0"
+edition = "2021"
+
+# # lib
+# [lib]
+# name = "socket_trial_rust"
+# path = "src/lib.rs"
+# crate-type = ["cdylib", "rlib"]
+
+
+[dependencies]
+axum = { version = "0.7.7", features = ["macros"] }
+futures = "0.3.31"
+lazy_static = "1.5.0"
+serde = { version = "1.0.211", features = ["derive"] }
+serde_json = "1.0.132"
+socketioxide = "0.15.0"
+tokio = { version = "1.40.0", features = ["full"] }
+tokio-stream = "0.1.16"
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+uuid = { version = "1.11.0", features = ["v4"] }
+tower-http = { version = "0.4", features = ["cors"] }
+hyper = { version = "1", features = ["full"] }
+# warp = "0.3.7"
+# rust_socketio = "0.6"
