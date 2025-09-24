@@ -1,15 +1,8 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use axum::extract::State;
-use socketioxide::{
-    extract::{Data, SocketRef},
-    socket,
-};
+use crate::models::*;
+use crate::state::AppState;
+use socketioxide::extract::{Data, SocketRef, State};
+use std::{collections::HashMap, time::{SystemTime, UNIX_EPOCH}};
 use tracing::{error, info, warn};
-
-use crate::{
-    AppState, ChatMessage, JoinRoomData, RoomUsersData, SendMessageData, User, UserJoinedData,
-};
 
 // Handle client connection
 pub async fn on_connect(socket: SocketRef, app_state: State<AppState>) {
@@ -22,10 +15,10 @@ pub async fn on_connect(socket: SocketRef, app_state: State<AppState>) {
     // Handle join room event
     socket.on("join_room", {
         let app_state = app_state.clone();
-        move |socket: SocketRef, Data(data): Data<JoinRoomData>, app_state: State<AppState>| {
+        move |socket: SocketRef, Data(data): Data<JoinRoomData>| {
             let app_state = app_state.clone();
             async move {
-                handle_join_room(socket, data, app_state).await;
+                handle_join_room(socket, data, socketioxide::extract::State(app_state)).await;
             }
         }
     });
@@ -33,10 +26,10 @@ pub async fn on_connect(socket: SocketRef, app_state: State<AppState>) {
     // Handle send message event
     socket.on("send_message", {
         let app_state = app_state.clone();
-        move |socket: SocketRef, Data(data): Data<JoinRoomData>, app_state: State<AppState>| {
+        move |socket: SocketRef, Data(data): Data<SendMessageData>| {
             let app_state = app_state.clone();
             async move {
-                handle_send_message(socket, data, app_state).await;
+                handle_send_message(socket, data, socketioxide::extract::State(app_state)).await;
             }
         }
     });
@@ -44,20 +37,20 @@ pub async fn on_connect(socket: SocketRef, app_state: State<AppState>) {
     // Handle typing events
     socket.on("typing", {
         let app_state = app_state.clone();
-        move |socket: SocketRef, app_state: State<AppState>| {
+        move |socket: SocketRef| {
             let app_state = app_state.clone();
             async move {
-                handle_typing(socket, app_state, true).await;
+                handle_typing(socket, socketioxide::extract::State(app_state), true).await;
             }
         }
     });
 
     socket.on("stop_typing", {
         let app_state = app_state.clone();
-        move |socket: SocketRef, app_state: State<AppState>| {
+        move |socket: SocketRef| {
             let app_state = app_state.clone();
             async move {
-                handle_typing(socket, app_state, false).await;
+                handle_typing(socket, socketioxide::extract::State(app_state), false).await;
             }
         }
     });
@@ -65,10 +58,10 @@ pub async fn on_connect(socket: SocketRef, app_state: State<AppState>) {
     // Handle disconnect
     socket.on_disconnect({
         let app_state = app_state.clone();
-        move |socket: SocketRef, app_state: State<AppState>| {
+        move |socket: SocketRef| {
             let app_state = app_state.clone();
             async move {
-                handle_disconnect(socket, app_state).await;
+                handle_disconnect(socket, socketioxide::extract::State(app_state)).await;
             }
         }
     });
@@ -190,4 +183,92 @@ pub async fn handle_send_message(
     } else {
         error!("received message from unknown user : {}", socket_id);
     }
+}
+
+// handle  typing indicator
+
+async fn handle_typing(socket: SocketRef, app_state: State<AppState>, is_typing: bool) {
+    let socket_id = socket.id.to_string();
+
+    if let Some(user) = app_state.get_user_by_socket_id(&socket_id).await {
+        let typing_data = TypingData {
+            username: user.username.clone(),
+            room: user.room.clone(),
+            is_typing,
+        };
+
+        // broadcast typing status to others in the room  (excluding sender)
+        socket.to(user.room).emit("user_typing", &typing_data).ok();
+    }
+}
+
+// Handle user disconnect
+
+async fn handle_disconnect(socket: SocketRef, app_state: State<AppState>) {
+    let socket_id = socket.id.to_string();
+    info!("Client disconnected: {}", socket_id);
+
+    // Remove user and get their info
+    if let Some(user) = app_state.remove_user(&socket_id).await {
+        info!("User {} left room: {}", user.username, user.room);
+
+        // get updated room users
+        let room_users = app_state.get_room_users(&user.room).await;
+        let user_count = room_users.len();
+        let usernames: Vec<String> = room_users.iter().map(|u| u.username.clone()).collect();
+
+        // send updated  user list to  remaining users in the room
+        if !room_users.is_empty() {
+            let room_users_data = RoomUsersData {
+                users: usernames,
+                count: user_count,
+            };
+
+            socket
+                .to(user.room.to_owned())
+                .emit("room_users_updated", &room_users_data)
+                .ok();
+
+            // notify other user that user left
+            let user_left_data = UserLeftData {
+                username: user.username.clone(),
+                room: user.room.clone(),
+                user_count,
+            };
+
+            socket
+                .to(user.room.clone())
+                .emit("user_left", &user_left_data)
+                .ok();
+
+            //create and broadcast system message
+            let system_message = ChatMessage {
+                id: uuid::Uuid::new_v4().to_string(),
+                username: "System".to_string(),
+                message: format!("{} has left the room.", user.username),
+                room: user.room.clone(),
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            };
+            app_state.add_message(system_message.clone()).await;
+            socket
+                .to(user.room.to_owned())
+                .emit("new_message", &system_message)
+                .ok();
+        }
+
+        // Update rooms list for all clients
+        let rooms_info = app_state.get_rooms_info().await;
+        socket.broadcast().emit("rooms_list", &rooms_info).ok();
+    }
+}
+
+// Handle getting room list
+pub async fn get_rooms_list(
+    app_state: State<AppState>,
+) -> Result<axum::Json<HashMap<String, usize>>, axum::http::StatusCode> {
+    let rooms = app_state.get_rooms_info().await;
+    Ok(axum::Json(rooms))
 }
