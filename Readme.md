@@ -86,7 +86,7 @@ rust-socket-chat/
 
 2. **Build and run the server:**
    ```sh
-   cargo run
+   cargo run --bin rust-socket-chat
    ```
 
 3. **Open your browser:**
