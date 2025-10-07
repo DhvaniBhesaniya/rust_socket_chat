@@ -27,5 +27,8 @@ uuid = { version = "1.11.0", features = ["v4"] }
 tower-http = { version = "0.5.2", features = ["cors"] }
 hyper = { version = "1", features = ["full"] }
 dotenv = "0.15.0"
+chrono = "0.4.42"
+
 # warp = "0.3.7"
 # rust_socketio = "0.6"
+# inventyv_datalayer_lib = { git = "https://packageagent-inventyv:----ghp_yHHRxvKCL99cKx5w-----NlBya5lhzu2oR64OZ2px@github.com/Dynamic-1001-GmbH/inventyv-datalayer-lib.git", branch = "feature-kafka_poll_func" }
